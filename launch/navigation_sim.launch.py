@@ -67,7 +67,8 @@ def generate_launch_description():
             'use_sim_time': use_sim_time,
             'slam': slam,
             'map': map_file,
-            'params_file': params_file
+            'params_file': params_file,
+            'slam_params_file': params_file
         }.items()
     )
 
