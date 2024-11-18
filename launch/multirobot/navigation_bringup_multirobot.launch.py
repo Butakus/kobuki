@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" This is a modification of the bringup launch file from nav2.
-    The changes were required to have a multirobot setup without remapping the /tf topic.
+"""
+This is a modification of the bringup launch file from nav2.
+
+The changes were required to have a multirobot setup without remapping the /tf topic.
 """
 import os
 
@@ -129,7 +131,10 @@ def generate_launch_description():
 
     declare_params_file_cmd = DeclareLaunchArgument(
         'params_file',
-        default_value=os.path.join(kobuki_dir, 'config', 'multirobot', 'nav2_multirobot_params_template.yaml'),
+        default_value=os.path.join(
+            kobuki_dir, 'config', 'multirobot',
+            'nav2_multirobot_params_template.yaml'
+        ),
         description='Full path to the ROS2 parameters file to use for all launched nodes',
     )
 
@@ -238,7 +243,6 @@ def generate_launch_description():
             'rviz_config_file': rviz_config_file,
         }.items()
     )
-
 
     # Create the launch description and populate
     ld = LaunchDescription()

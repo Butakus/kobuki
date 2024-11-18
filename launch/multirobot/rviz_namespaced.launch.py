@@ -20,14 +20,13 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
-    RegisterEventHandler,
-    GroupAction
+    RegisterEventHandler
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node, SetRemap, PushROSNamespace
+from launch_ros.actions import Node
 from nav2_common.launch import ReplaceString
 
 
@@ -40,7 +39,6 @@ def generate_launch_description():
     use_namespace = LaunchConfiguration('use_namespace')
     rviz_config_file = LaunchConfiguration('rviz_config')
     use_sim_time = LaunchConfiguration('use_sim_time')
-    do_tf_remapping = LaunchConfiguration('do_tf_remapping')
 
     # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -56,12 +54,6 @@ def generate_launch_description():
         'use_namespace',
         default_value='True',
         description='Whether to apply a namespace to the navigation stack',
-    )
-
-    declare_do_tf_remapping_cmd = DeclareLaunchArgument(
-        'do_tf_remapping',
-        default_value='False',
-        description='Whether to remap the tf topic to independent namespaces (/tf -> tf)',
     )
 
     declare_rviz_config_file_cmd = DeclareLaunchArgument(
@@ -107,27 +99,6 @@ def generate_launch_description():
             ('/initialpose', 'initialpose'),
         ],
     )
-    # rviz_namespaced_cmd_group = GroupAction(
-    #     [
-    #         PushROSNamespace(condition=IfCondition(use_namespace), namespace=namespace),
-    #         SetRemap(condition=IfCondition(do_tf_remapping), src='/tf', dst='tf'),
-    #         SetRemap(condition=IfCondition(do_tf_remapping), src='/tf_static', dst='tf_static'),
-    #         Node(
-    #                 condition=IfCondition(use_namespace),
-    #                 package='rviz2',
-    #                 executable='rviz2',
-    #                 arguments=['-d', namespaced_rviz_config_file],
-    #                 parameters=[{'use_sim_time': use_sim_time}],
-    #                 output='screen',
-    #                 remappings=[
-    #                     ('/map', 'map'),
-    #                     ('/goal_pose', 'goal_pose'),
-    #                     ('/clicked_point', 'clicked_point'),
-    #                     ('/initialpose', 'initialpose'),
-    #                 ],
-    #             ),
-    #     ]
-    # )
 
     exit_event_handler = RegisterEventHandler(
         condition=UnlessCondition(use_namespace),
@@ -153,7 +124,6 @@ def generate_launch_description():
     ld.add_action(declare_use_namespace_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_sim_time_cmd)
-    ld.add_action(declare_do_tf_remapping_cmd)
 
     # Add any conditioned actions
     ld.add_action(start_rviz_cmd)

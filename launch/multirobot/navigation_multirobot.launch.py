@@ -91,7 +91,10 @@ def generate_launch_description():
 
     declare_params_file_cmd = DeclareLaunchArgument(
         'params_file',
-        default_value=os.path.join(kobuki_dir, 'config', 'multirobot', 'nav2_multirobot_params_template.yaml'),
+        default_value=os.path.join(
+            kobuki_dir, 'config', 'multirobot',
+            'nav2_multirobot_params_template.yaml'
+        ),
         description='Full path to the ROS2 parameters file to use for all launched nodes',
     )
 

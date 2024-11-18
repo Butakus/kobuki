@@ -83,7 +83,7 @@ def generate_launch_description():
             PythonLaunchDescriptionSource([os.path.join(
                 get_package_share_directory('kobuki_description'),
                 'launch/'), 'spawn.launch.py']),
-                launch_arguments=robot_args.items()
+            launch_arguments=robot_args.items()
         )
         spawn_robot_list.append(spawn_robot)
 
