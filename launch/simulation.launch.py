@@ -21,34 +21,10 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
-    IncludeLaunchDescription,
-    OpaqueFunction
+    IncludeLaunchDescription
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-
-
-def start_gz_sim(context, *args, **kwargs):
-
-    world = LaunchConfiguration('world').perform(context)
-
-    start_gazebo_server_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory('ros_gz_sim'), 'launch',
-                         'gz_sim.launch.py')),
-        launch_arguments={'gz_args': ['-r -s ', world]}.items()
-    )
-
-    start_gazebo_client_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory('ros_gz_sim'),
-                         'launch',
-                         'gz_sim.launch.py')
-        ),
-        launch_arguments={'gz_args': [' -g ']}.items(),
-    )
-
-    return [start_gazebo_server_cmd, start_gazebo_client_cmd]
 
 
 def generate_launch_description():
@@ -59,7 +35,21 @@ def generate_launch_description():
             'worlds',
             'small_house.world'))
 
-    start_gazebo_server_cmd = OpaqueFunction(function=start_gz_sim)
+    gazebo_server = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory('ros_gz_sim'), 'launch',
+                         'gz_sim.launch.py')),
+        launch_arguments={'gz_args': ['-r -s ', LaunchConfiguration('world')]}.items()
+    )
+
+    gazebo_client = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory('ros_gz_sim'),
+                         'launch',
+                         'gz_sim.launch.py')
+        ),
+        launch_arguments={'gz_args': [' -g ']}.items(),
+    )
 
     spawn_robot = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([os.path.join(
@@ -69,7 +59,8 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     ld.add_action(declare_world_cmd)
-    ld.add_action(start_gazebo_server_cmd)
+    ld.add_action(gazebo_server)
+    ld.add_action(gazebo_client)
     ld.add_action(spawn_robot)
 
     return ld
