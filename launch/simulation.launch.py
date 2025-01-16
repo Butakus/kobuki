@@ -23,17 +23,24 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
 
-    declare_world_cmd = DeclareLaunchArgument(
+    world_arg = DeclareLaunchArgument(
         'world', default_value=os.path.join(
             get_package_share_directory('aws_robomaker_small_house_world'),
             'worlds',
             'small_house.world'))
+
+    gui_arg = DeclareLaunchArgument(
+        'gui',
+        default_value='true',
+        description='Set to false to run gazebo headless',
+    )
 
     gazebo_server = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -49,6 +56,7 @@ def generate_launch_description():
                          'gz_sim.launch.py')
         ),
         launch_arguments={'gz_args': [' -g ']}.items(),
+        condition=IfCondition(LaunchConfiguration('gui')),
     )
 
     spawn_robot = IncludeLaunchDescription(
@@ -58,7 +66,8 @@ def generate_launch_description():
     )
 
     ld = LaunchDescription()
-    ld.add_action(declare_world_cmd)
+    ld.add_action(world_arg)
+    ld.add_action(gui_arg)
     ld.add_action(gazebo_server)
     ld.add_action(gazebo_client)
     ld.add_action(spawn_robot)

@@ -23,6 +23,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
@@ -44,36 +45,19 @@ robots = [
 ]
 
 
-def start_gz_sim(context, *args, **kwargs):
-
-    world = LaunchConfiguration('world').perform(context)
-
-    start_gazebo_server_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory('ros_gz_sim'), 'launch',
-                         'gz_sim.launch.py')),
-        launch_arguments={'gz_args': ['-r -s ', world]}.items()
-    )
-
-    start_gazebo_client_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory('ros_gz_sim'),
-                         'launch',
-                         'gz_sim.launch.py')
-        ),
-        launch_arguments={'gz_args': [' -g ']}.items(),
-    )
-
-    return [start_gazebo_server_cmd, start_gazebo_client_cmd]
-
-
 def generate_launch_description():
 
-    declare_world_cmd = DeclareLaunchArgument(
+    world_arg = DeclareLaunchArgument(
         'world', default_value=os.path.join(
             get_package_share_directory('aws_robomaker_small_house_world'),
             'worlds',
             'small_house.world'))
+
+    gui_arg = DeclareLaunchArgument(
+        'gui',
+        default_value='true',
+        description='Set to false to run gazebo headless',
+    )
 
     gazebo_server = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -89,6 +73,7 @@ def generate_launch_description():
                          'gz_sim.launch.py')
         ),
         launch_arguments={'gz_args': [' -g ']}.items(),
+        condition=IfCondition(LaunchConfiguration('gui')),
     )
 
     spawn_robot_list = []
@@ -102,7 +87,8 @@ def generate_launch_description():
         spawn_robot_list.append(spawn_robot)
 
     ld = LaunchDescription()
-    ld.add_action(declare_world_cmd)
+    ld.add_action(world_arg)
+    ld.add_action(gui_arg)
     ld.add_action(gazebo_server)
     ld.add_action(gazebo_client)
     for spawn_action in spawn_robot_list:
