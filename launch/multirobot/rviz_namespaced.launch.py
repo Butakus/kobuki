@@ -25,7 +25,7 @@ from launch.actions import (
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EqualsSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 from nav2_common.launch import ReplaceString
 
@@ -36,9 +36,11 @@ def generate_launch_description():
 
     # Create the launch configuration variables
     namespace = LaunchConfiguration('namespace')
-    use_namespace = LaunchConfiguration('use_namespace')
     rviz_config_file = LaunchConfiguration('rviz_config')
     use_sim_time = LaunchConfiguration('use_sim_time')
+
+    # Condition to check if a namespace is used
+    is_empty_namespace = EqualsSubstitution(LaunchConfiguration('namespace'), '')
 
     # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -48,12 +50,6 @@ def generate_launch_description():
             'Top-level namespace. The value will be used to replace the '
             '<robot_namespace> keyword on the rviz config file.'
         ),
-    )
-
-    declare_use_namespace_cmd = DeclareLaunchArgument(
-        'use_namespace',
-        default_value='True',
-        description='Whether to apply a namespace to the navigation stack',
     )
 
     declare_rviz_config_file_cmd = DeclareLaunchArgument(
@@ -68,22 +64,29 @@ def generate_launch_description():
         description='Use simulation (Gazebo) clock if true')
 
     # Launch rviz
-    start_rviz_cmd = Node(
-        condition=UnlessCondition(use_namespace),
-        package='rviz2',
-        executable='rviz2',
-        arguments=['-d', rviz_config_file],
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
-    )
-
     namespaced_rviz_config_file = ReplaceString(
+        condition=UnlessCondition(is_empty_namespace),
         source_file=rviz_config_file,
         replacements={'<robot_namespace>': ('/', namespace)},
     )
 
+    default_rviz_config_file = ReplaceString(
+        condition=IfCondition(is_empty_namespace),
+        source_file=rviz_config_file,
+        replacements={'<robot_namespace>': ('', namespace)},
+    )
+
+    start_rviz_cmd = Node(
+        condition=IfCondition(is_empty_namespace),
+        package='rviz2',
+        executable='rviz2',
+        arguments=['-d', default_rviz_config_file],
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+    )
+
     start_namespaced_rviz_cmd = Node(
-        condition=IfCondition(use_namespace),
+        condition=UnlessCondition(is_empty_namespace),
         package='rviz2',
         executable='rviz2',
         namespace=namespace,
@@ -101,7 +104,7 @@ def generate_launch_description():
     )
 
     exit_event_handler = RegisterEventHandler(
-        condition=UnlessCondition(use_namespace),
+        condition=IfCondition(is_empty_namespace),
         event_handler=OnProcessExit(
             target_action=start_rviz_cmd,
             on_exit=EmitEvent(event=Shutdown(reason='rviz exited')),
@@ -109,7 +112,7 @@ def generate_launch_description():
     )
 
     exit_event_handler_namespaced = RegisterEventHandler(
-        condition=IfCondition(use_namespace),
+        condition=UnlessCondition(is_empty_namespace),
         event_handler=OnProcessExit(
             target_action=start_namespaced_rviz_cmd,
             on_exit=EmitEvent(event=Shutdown(reason='rviz exited')),
@@ -121,7 +124,6 @@ def generate_launch_description():
 
     # Declare the launch options
     ld.add_action(declare_namespace_cmd)
-    ld.add_action(declare_use_namespace_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_sim_time_cmd)
 
