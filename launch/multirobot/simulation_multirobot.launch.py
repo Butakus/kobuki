@@ -23,26 +23,45 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription
 )
+from launch.actions import OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+import yaml
 
-# List of robots to be spawned. This list contains the dictionaries
-# of launch arguments that are passed to the kobuki_description spawn launcher
-# TODO: Move this config to a YAML file
-robots = [
-    {
-        'name': 'kobuki_1',  # Gazebo model name
-        'namespace': 'r1',  # Namespace for topics and TF frames
-    },
-    {
-        'name': 'kobuki_2',
-        'namespace': 'r2',
-        'x': '2.0',
-        'y': '1.0',
-        'Y': '0.0',
-    }
-]
+
+def spawn_robots(context):
+    """Read the YAML configuration file and spawn the robots defined in it."""
+    config_file = LaunchConfiguration('robots_config_file').perform(context)
+
+    def convert_floats_to_strings(data):
+        """
+        Convert all float params in a dict to strings.
+
+        This is required because all launch arguments must be strings.
+        """
+        if isinstance(data, dict):
+            return {k: convert_floats_to_strings(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [convert_floats_to_strings(i) for i in data]
+        elif isinstance(data, float):
+            return str(data)
+        else:
+            return data
+
+    config_robots = yaml.safe_load(open(config_file, 'r'))
+    config_robots = convert_floats_to_strings(config_robots)
+
+    robot_actions = []
+    for robot_args in config_robots['robots']:
+        spawn_robot = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([os.path.join(
+                get_package_share_directory('kobuki_description'),
+                'launch/'), 'spawn.launch.py']),
+            launch_arguments=robot_args.items()
+        )
+        robot_actions.append(spawn_robot)
+    return robot_actions
 
 
 def generate_launch_description():
@@ -57,6 +76,15 @@ def generate_launch_description():
         'gui',
         default_value='true',
         description='Set to false to run gazebo headless',
+    )
+
+    robots_config_arg = DeclareLaunchArgument(
+        'robots_config_file',
+        default_value=os.path.join(
+            get_package_share_directory('kobuki'),
+            'config', 'multirobot',
+            'multirobot_config.yaml'),
+        description='YAML file with the configuration of the robots to be spawned',
     )
 
     gazebo_server = IncludeLaunchDescription(
@@ -76,22 +104,12 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('gui')),
     )
 
-    spawn_robot_list = []
-    for robot_args in robots:
-        spawn_robot = IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([os.path.join(
-                get_package_share_directory('kobuki_description'),
-                'launch/'), 'spawn.launch.py']),
-            launch_arguments=robot_args.items()
-        )
-        spawn_robot_list.append(spawn_robot)
-
     ld = LaunchDescription()
     ld.add_action(world_arg)
     ld.add_action(gui_arg)
+    ld.add_action(robots_config_arg)
     ld.add_action(gazebo_server)
     ld.add_action(gazebo_client)
-    for spawn_action in spawn_robot_list:
-        ld.add_action(spawn_action)
+    ld.add_action(OpaqueFunction(function=spawn_robots))
 
     return ld
