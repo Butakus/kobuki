@@ -21,6 +21,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     GroupAction,
     IncludeLaunchDescription,
+    OpaqueFunction,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -36,21 +37,13 @@ from launch_ros.actions import (
 )
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import ReplaceString, RewrittenYaml
+import yaml
 
 
-def generate_launch_description():
-    # Get the launch directory
+def launch_nodes(context):
+    """Configure and launch all the navigation nodes."""
     kobuki_dir = get_package_share_directory('kobuki')
     launch_dir = os.path.join(kobuki_dir, 'launch', 'multirobot')
-
-    namespace = LaunchConfiguration('namespace')
-    use_rviz = LaunchConfiguration('rviz')
-    rviz_config_file = LaunchConfiguration('rviz_config')
-    use_sim_time = LaunchConfiguration('use_sim_time')
-    map_yaml_file = LaunchConfiguration('map')
-    params_file = LaunchConfiguration('params_file')
-    do_tf_remapping = LaunchConfiguration('do_tf_remapping')
-    use_localization = LaunchConfiguration('use_localization')
 
     lifecycle_nodes_navigation = [
         'controller_server',
@@ -68,6 +61,18 @@ def generate_launch_description():
         'map_server',
         'amcl'
     ]
+
+    namespace = LaunchConfiguration('namespace')
+    use_rviz = LaunchConfiguration('rviz')
+    rviz_config_file = LaunchConfiguration('rviz_config')
+    use_sim_time = LaunchConfiguration('use_sim_time')
+    map_yaml_file = LaunchConfiguration('map')
+    params_file = LaunchConfiguration('params_file')
+    do_tf_remapping = LaunchConfiguration('do_tf_remapping')
+    use_localization = LaunchConfiguration('use_localization')
+    set_initial_pose = LaunchConfiguration('set_initial_pose').perform(context)
+    set_initial_pose = set_initial_pose == 'True' or set_initial_pose == 'true'
+    robots_config_file = LaunchConfiguration('robots_config_file').perform(context)
 
     # Map fully qualified names to relative ones so the node's namespace can be prepended.
     # In case of the transforms (tf), currently, there doesn't seem to be a better alternative
@@ -107,54 +112,6 @@ def generate_launch_description():
             convert_types=True,
         ),
         allow_substs=True,
-    )
-
-    declare_namespace_cmd = DeclareLaunchArgument(
-        'namespace', default_value='', description='Top-level namespace'
-    )
-
-    declare_use_rviz_cmd = DeclareLaunchArgument(
-        'rviz', default_value='True', description='Whether to launch RVIZ')
-
-    declare_rviz_config_file_cmd = DeclareLaunchArgument(
-        'rviz_config',
-        default_value=os.path.join(kobuki_dir, 'rviz', 'nav2_namespaced_view.rviz'),
-        description='Full path to the RVIZ config file to use',
-    )
-
-    declare_use_sim_time_cmd = DeclareLaunchArgument(
-        'use_sim_time',
-        default_value='true',
-        description='Use simulation (Gazebo) clock if true',
-    )
-
-    declare_map_yaml_cmd = DeclareLaunchArgument(
-        'map',
-        default_value=os.path.join(
-            kobuki_dir,
-            'maps',
-            'aws_house.yaml'),
-        description='Full path to map yaml file to load'
-    )
-
-    declare_params_file_cmd = DeclareLaunchArgument(
-        'params_file',
-        default_value=os.path.join(
-            kobuki_dir, 'config', 'multirobot',
-            'nav2_multirobot_params_template.yaml'
-        ),
-        description='Full path to the ROS2 parameters file to use for all launched nodes',
-    )
-
-    declare_do_tf_remapping_cmd = DeclareLaunchArgument(
-        'do_tf_remapping',
-        default_value='False',
-        description='Whether to remap the tf topic to independent namespaces (/tf -> tf)',
-    )
-
-    declare_use_localization_cmd = DeclareLaunchArgument(
-        'use_localization', default_value='True',
-        description='Whether to enable localization or not'
     )
 
     navigation_nodes = GroupAction(
@@ -238,6 +195,40 @@ def generate_launch_description():
         ],
     )
 
+    rviz_cmd = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(launch_dir, 'rviz_namespaced.launch.py')
+        ),
+        condition=IfCondition(use_rviz),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'namespace': namespace,
+            'do_tf_remapping': do_tf_remapping,
+            'rviz_config_file': rviz_config_file,
+        }.items()
+    )
+
+    # Parse initial pose from multirobot setup config and build amcl params
+    initial_pose = {
+        'x': 0.0,
+        'y': 0.0,
+        'z': 0.0,
+        'yaw': 0.0
+    }
+    if set_initial_pose and os.path.isfile(robots_config_file):
+        config_robots = yaml.safe_load(open(robots_config_file, 'r'))
+        for robot_args in config_robots['robots']:
+            if robot_args.get('namespace', '') == namespace.perform(context):
+                initial_pose['x'] = robot_args.get('x', 0.0)
+                initial_pose['y'] = robot_args.get('y', 0.0)
+                initial_pose['z'] = robot_args.get('z', 0.0)
+                initial_pose['yaw'] = robot_args.get('Y', 0.0)
+                break
+    amcl_extra_params = {
+        'set_initial_pose': set_initial_pose,
+        'initial_pose': initial_pose,
+    }
+
     localization_nodes = GroupAction(
         condition=IfCondition(use_localization),
         actions=[
@@ -257,7 +248,7 @@ def generate_launch_description():
                 executable='amcl',
                 name='amcl',
                 output='screen',
-                parameters=[configured_params],
+                parameters=[configured_params, amcl_extra_params],
             ),
             Node(
                 package='nav2_lifecycle_manager',
@@ -269,17 +260,79 @@ def generate_launch_description():
         ],
     )
 
-    rviz_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(launch_dir, 'rviz_namespaced.launch.py')
+    return [navigation_nodes, rviz_cmd, localization_nodes]
+
+
+def generate_launch_description():
+    # Get the launch directory
+    kobuki_dir = get_package_share_directory('kobuki')
+
+    declare_namespace_cmd = DeclareLaunchArgument(
+        'namespace', default_value='', description='Top-level namespace'
+    )
+
+    declare_use_rviz_cmd = DeclareLaunchArgument(
+        'rviz', default_value='True', description='Whether to launch RVIZ')
+
+    declare_rviz_config_file_cmd = DeclareLaunchArgument(
+        'rviz_config',
+        default_value=os.path.join(kobuki_dir, 'rviz', 'nav2_namespaced_view.rviz'),
+        description='Full path to the RVIZ config file to use',
+    )
+
+    declare_use_sim_time_cmd = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='true',
+        description='Use simulation (Gazebo) clock if true',
+    )
+
+    declare_map_yaml_cmd = DeclareLaunchArgument(
+        'map',
+        default_value=os.path.join(
+            kobuki_dir,
+            'maps',
+            'aws_house.yaml'),
+        description='Full path to map yaml file to load'
+    )
+
+    declare_params_file_cmd = DeclareLaunchArgument(
+        'params_file',
+        default_value=os.path.join(
+            kobuki_dir, 'config', 'multirobot',
+            'nav2_multirobot_params_template.yaml'
         ),
-        condition=IfCondition(use_rviz),
-        launch_arguments={
-            'use_sim_time': use_sim_time,
-            'namespace': namespace,
-            'do_tf_remapping': do_tf_remapping,
-            'rviz_config_file': rviz_config_file,
-        }.items()
+        description='Full path to the ROS2 parameters file to use for all launched nodes',
+    )
+
+    declare_do_tf_remapping_cmd = DeclareLaunchArgument(
+        'do_tf_remapping',
+        default_value='False',
+        description='Whether to remap the tf topic to independent namespaces (/tf -> tf)',
+    )
+
+    declare_use_localization_cmd = DeclareLaunchArgument(
+        'use_localization', default_value='True',
+        description='Whether to enable localization or not'
+    )
+
+    declare_set_initial_pose_cmd = DeclareLaunchArgument(
+        'set_initial_pose', default_value='True',
+        description="""
+            Set the initial_pose param in amcl.
+            The pose value is read from the multirobot_config file.
+        """
+    )
+
+    declare_robots_config_cmd = DeclareLaunchArgument(
+        'robots_config_file',
+        default_value=os.path.join(
+            get_package_share_directory('kobuki'),
+            'config', 'multirobot',
+            'multirobot_config.yaml'),
+        description="""
+            YAML file with the configuration of the robots to be spawned.
+            This file is only used to set the robot's initial pose.
+        """,
     )
 
     # Create the launch description and populate
@@ -294,9 +347,11 @@ def generate_launch_description():
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_do_tf_remapping_cmd)
     ld.add_action(declare_use_localization_cmd)
+    ld.add_action(declare_set_initial_pose_cmd)
+    ld.add_action(declare_robots_config_cmd)
     # Add the actions to launch all of the navigation nodes
-    ld.add_action(navigation_nodes)
-    ld.add_action(localization_nodes)
-    ld.add_action(rviz_cmd)
+    ld.add_action(OpaqueFunction(
+        function=launch_nodes
+    ))
 
     return ld
