@@ -36,7 +36,7 @@ jobs:
           required-ros-distributions: rolling
 
       - name: build and test
-        uses: ros-tooling/action-ros-ci@0.3.15
+        uses: ros-tooling/action-ros-ci@0.3.16
         with:
           package-name: kobuki
           target-ros2-distro: rolling
