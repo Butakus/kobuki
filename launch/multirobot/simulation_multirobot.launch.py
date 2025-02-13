@@ -87,6 +87,13 @@ def generate_launch_description():
         description='YAML file with the configuration of the robots to be spawned',
     )
 
+    # This argument is automatically forwarded to kobuki_description / spawn.launch.py
+    declare_do_tf_remapping_arg = DeclareLaunchArgument(
+        'do_tf_remapping',
+        default_value='False',
+        description='Whether to remap the tf topics to independent namespaces (/tf -> tf)',
+    )
+
     gazebo_server = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory('ros_gz_sim'), 'launch',
@@ -108,6 +115,7 @@ def generate_launch_description():
     ld.add_action(world_arg)
     ld.add_action(gui_arg)
     ld.add_action(robots_config_arg)
+    ld.add_action(declare_do_tf_remapping_arg)
     ld.add_action(gazebo_server)
     ld.add_action(gazebo_client)
     ld.add_action(OpaqueFunction(function=spawn_robots))
